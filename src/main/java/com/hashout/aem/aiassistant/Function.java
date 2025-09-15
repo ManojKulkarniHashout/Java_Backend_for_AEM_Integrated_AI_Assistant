@@ -126,21 +126,22 @@ public class Function {
                 logger.info("Step 3: Generating embeddings for " + contentItems.size() + " items");
                 List<List<Double>> embeddings = new ArrayList<>();
                 
-                for (int i = 0; i < contentItems.size(); i++) {
-                    AemContentItem item = contentItems.get(i);
+                int itemIndex = 0;
+                for (java.util.Iterator<AemContentItem> iterator = contentItems.iterator(); iterator.hasNext(); ) {
+                    AemContentItem item = iterator.next();
                     String textChunk = item.createTextChunk();
-                    
+
                     if (textChunk != null && !textChunk.trim().isEmpty()) {
                         List<Double> embedding = embeddingService.generateEmbedding(textChunk);
                         embeddings.add(embedding);
-                        
-                        logger.info("Generated embedding for item " + (i + 1) + "/" + contentItems.size() + 
+
+                        logger.info("Generated embedding for item " + (itemIndex + 1) + "/" + contentItems.size() +
                                    " (path: " + item.getPath() + ")");
+                        itemIndex++;
                     } else {
                         logger.warning("Skipping empty text chunk for item: " + item.getPath());
-                        // Add empty embedding or remove the item
-                        contentItems.remove(i);
-                        i--; // Adjust index after removal
+                        // Remove the item using iterator
+                        iterator.remove();
                     }
                 }
                 
