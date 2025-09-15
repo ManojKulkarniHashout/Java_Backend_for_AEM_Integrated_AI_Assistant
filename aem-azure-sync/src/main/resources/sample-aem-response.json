@@ -1,0 +1,57 @@
+[
+  {
+    "path": "/content/mysite/en/products/super-widget",
+    "title": "SuperWidget Pro",
+    "template": "/conf/mysite/settings/wcm/templates/product-page",
+    "lastModified": "2024-10-26T14:30:00.000Z",
+    "lastModifiedBy": "jdoe",
+    "published": "2024-10-25T09:00:00.000Z",
+    "publishedBy": "admin",
+    "tags": ["products:gadgets", "promo:new-release"],
+    "workflowState": null
+  },
+  {
+    "path": "/content/mysite/en/about/careers",
+    "title": "Careers at Our Company",
+    "template": "/conf/mysite/settings/wcm/templates/content-page",
+    "lastModified": "2024-10-27T11:00:00.000Z",
+    "lastModifiedBy": "asmith",
+    "published": null,
+    "publishedBy": null,
+    "tags": [],
+    "workflowState": null
+  },
+  {
+    "path": "/content/mysite/en/blog/q4-update",
+    "title": "Our Q4 Company Update",
+    "template": "/conf/mysite/settings/wcm/templates/blog-post",
+    "lastModified": "2024-10-27T09:15:00.000Z",
+    "lastModifiedBy": "jdoe",
+    "published": null,
+    "publishedBy": null,
+    "tags": ["company:news", "quarterly:q4"],
+    "workflowState": "In Review"
+  },
+  {
+    "path": "/content/mysite/en/contact-us",
+    "title": "Contact Us",
+    "template": "/conf/mysite/settings/wcm/templates/content-page",
+    "lastModified": "2022-01-15T18:20:00.000Z",
+    "lastModifiedBy": "admin",
+    "published": "2022-01-15T18:25:00.000Z",
+    "publishedBy": "admin",
+    "tags": ["company:info"],
+    "workflowState": null
+  },
+  {
+    "path": "/content/dam/mysite/documents/whitepaper.pdf",
+    "title": "2024 Industry Whitepaper",
+    "template": null,
+    "lastModified": "2024-09-05T12:00:00.000Z",
+    "lastModifiedBy": "mktg-user",
+    "published": "2024-09-05T12:05:00.000Z",
+    "publishedBy": "mktg-user",
+    "tags": ["type:whitepaper", "industry:tech"],
+    "workflowState": null
+  }
+]
