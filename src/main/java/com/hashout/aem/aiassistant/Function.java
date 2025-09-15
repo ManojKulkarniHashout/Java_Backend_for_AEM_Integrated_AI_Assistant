@@ -125,29 +125,27 @@ public class Function {
                 // Step 3: Generate embeddings for each content item
                 logger.info("Step 3: Generating embeddings for " + contentItems.size() + " items");
                 List<List<Double>> embeddings = new ArrayList<>();
-                
+                List<AemContentItem> validContentItems = new ArrayList<>();
                 int itemIndex = 0;
-                for (java.util.Iterator<AemContentItem> iterator = contentItems.iterator(); iterator.hasNext(); ) {
-                    AemContentItem item = iterator.next();
+                for (AemContentItem item : contentItems) {
                     String textChunk = item.createTextChunk();
 
                     if (textChunk != null && !textChunk.trim().isEmpty()) {
                         List<Double> embedding = embeddingService.generateEmbedding(textChunk);
                         embeddings.add(embedding);
+                        validContentItems.add(item);
 
                         logger.info("Generated embedding for item " + (itemIndex + 1) + "/" + contentItems.size() +
                                    " (path: " + item.getPath() + ")");
                         itemIndex++;
                     } else {
                         logger.warning("Skipping empty text chunk for item: " + item.getPath());
-                        // Remove the item using iterator
-                        iterator.remove();
                     }
                 }
                 
                 // Step 4: Index documents in Azure AI Search
-                logger.info("Step 4: Indexing " + contentItems.size() + " documents in Azure AI Search");
-                searchService.indexDocuments(contentItems, embeddings);
+                logger.info("Step 4: Indexing " + validContentItems.size() + " documents in Azure AI Search");
+                searchService.indexDocuments(validContentItems, embeddings);
                 
                 logger.info("Sync process completed successfully");
                 
