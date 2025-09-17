@@ -18,76 +18,84 @@ import com.aem.sync.model.SearchDocument;
 
 public class SyncAemContentService {
     public static void sync(ExecutionContext context) {
+        context.getLogger().info("=== AEM Sync Pipeline Starting ===");
         try {
-            context.getLogger().info("Starting sync from AEM_EXPORT_SERVLET_URL...");
+            // Phase 1: Fetch
+            context.getLogger().info("Phase 1: AEM Data Fetch");
             String aemUrl = System.getenv("AEM_EXPORT_SERVLET_URL");
-            if (aemUrl == null || aemUrl.isBlank()) {
-                throw new IllegalStateException("AEM_EXPORT_SERVLET_URL env var is required");
-            }
-            context.getLogger().info("Fetching AEM data from: " + aemUrl);
-            okhttp3.OkHttpClient client = new okhttp3.OkHttpClient();
-            okhttp3.Request.Builder reqBuilder = new okhttp3.Request.Builder().url(aemUrl);
-            // Optional AEM auth: Basic (AEM_USERNAME/AEM_PASSWORD) or Bearer (AEM_AUTH_TOKEN)
-            String aemUser = System.getenv("AEM_USERNAME");
-            String aemPass = System.getenv("AEM_PASSWORD");
-            String aemToken = System.getenv("AEM_AUTH_TOKEN");
-            if (aemToken != null && !aemToken.isBlank()) {
-                reqBuilder.addHeader("Authorization", "Bearer " + aemToken);
-            } else if (aemUser != null && !aemUser.isBlank() && aemPass != null) {
-                String basic = java.util.Base64.getEncoder().encodeToString((aemUser + ":" + aemPass).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                reqBuilder.addHeader("Authorization", "Basic " + basic);
-            }
-            okhttp3.Request request = reqBuilder.build();
-            okhttp3.Response response = client.newCall(request).execute();
-            context.getLogger().info("AEM response status: " + response.code());
-            if (!response.isSuccessful()) throw new RuntimeException("Failed to fetch AEM data");
-            String rawText = response.body().string();
-            context.getLogger().info("Fetched " + rawText.length() + " chars from AEM.");
-            java.util.List<String> chunks = chunkTextWithOpenAI(rawText, context);
-            context.getLogger().info("Chunking complete. Number of chunks: " + chunks.size());
-            java.util.List<com.aem.sync.model.SearchDocument> docs = new java.util.ArrayList<>();
+            if (aemUrl == null || aemUrl.isBlank()) throw new IllegalStateException("AEM_EXPORT_SERVLET_URL env var is required");
+            String rawText = fetchAemWithRetry(aemUrl, context);
+            context.getLogger().info("Fetched chars: " + rawText.length());
 
+            // Phase 2: Chunk
+            context.getLogger().info("Phase 2: Content Chunking");
+            List<String> chunks = chunkTextWithOpenAIWithRetry(rawText, context);
+            context.getLogger().info("Chunk count: " + chunks.size());
+
+            // Phase 3: Embeddings
+            context.getLogger().info("Phase 3: Embedding Generation");
+            List<SearchDocument> docs = new ArrayList<>();
             String openAiKey = coalesce(System.getenv("AZURE_OPENAI_API_KEY"), System.getenv("AZURE_OPENAI_KEY"));
-            if (openAiKey == null || openAiKey.isBlank()) {
-                throw new IllegalStateException("AZURE_OPENAI_API_KEY or AZURE_OPENAI_KEY must be set for embeddings");
-            }
-
-            com.azure.ai.openai.OpenAIClient openAIClient = new com.azure.ai.openai.OpenAIClientBuilder()
+            if (openAiKey == null || openAiKey.isBlank()) throw new IllegalStateException("AZURE_OPENAI_API_KEY or AZURE_OPENAI_KEY must be set for embeddings");
+            OpenAIClient openAIClient = new OpenAIClientBuilder()
                 .endpoint(System.getenv("AZURE_OPENAI_ENDPOINT"))
-                .credential(new com.azure.core.credential.AzureKeyCredential(openAiKey))
+                .credential(new AzureKeyCredential(openAiKey))
                 .buildClient();
-            String deployment = System.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT");
-            if (deployment == null || deployment.isBlank()) {
-                throw new IllegalStateException("AZURE_OPENAI_EMBEDDING_DEPLOYMENT env var is required");
-            }
-            int chunkNum = 1;
-            for (String chunk : chunks) {
-                context.getLogger().info("Embedding chunk " + chunkNum + ": " + (chunk.length() > 100 ? chunk.substring(0,100) + "..." : chunk));
-                com.azure.ai.openai.models.EmbeddingsOptions options = new com.azure.ai.openai.models.EmbeddingsOptions(java.util.Arrays.asList(chunk));
-                com.azure.ai.openai.models.Embeddings embeddings = openAIClient.getEmbeddings(deployment, options);
-                java.util.List<Float> vector = embeddings.getData().get(0).getEmbedding();
-                com.aem.sync.model.SearchDocument doc = new com.aem.sync.model.SearchDocument(chunk, vector, null);
-                docs.add(doc);
-                chunkNum++;
-            }
-            context.getLogger().info("Generated embeddings for all chunks.");
+            String embeddingDeployment = System.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT");
+            if (embeddingDeployment == null || embeddingDeployment.isBlank()) throw new IllegalStateException("AZURE_OPENAI_EMBEDDING_DEPLOYMENT env var is required");
 
+            int maxEmbedRetries = intFromEnv("SYNC_MAX_EMBED_RETRIES", 2);
+            long embedBackoffMs = longFromEnv("SYNC_EMBED_BACKOFF_MS", 600);
+            int idx = 0;
+            for (String chunk : chunks) {
+                context.getLogger().info("Embedding chunk " + (idx + 1) + "/" + chunks.size());
+                List<Float> vector = null;
+                int attempt = 0;
+                while (attempt <= maxEmbedRetries) {
+                    try {
+                        EmbeddingsOptions opts = new EmbeddingsOptions(Arrays.asList(chunk));
+                        Embeddings emb = openAIClient.getEmbeddings(embeddingDeployment, opts);
+                        vector = emb.getData().get(0).getEmbedding();
+                        break;
+                    } catch (Exception ex) {
+                        attempt++;
+                        if (attempt > maxEmbedRetries) {
+                            context.getLogger().severe("Embedding failed after attempts=" + attempt + ": " + ex.getMessage());
+                        } else {
+                            context.getLogger().warning("Embedding attempt " + attempt + " failed: " + ex.getMessage() + " retry in " + embedBackoffMs + "ms");
+                            try { Thread.sleep(embedBackoffMs); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                        }
+                    }
+                }
+                if (vector != null) {
+                    // Placeholder for associating original metadata if per-item chunk mapping becomes available
+                    String syntheticId = "chunk-" + idx + "-" + System.currentTimeMillis();
+                    docs.add(new SearchDocument(chunk, vector, null, syntheticId));
+                }
+                idx++;
+            }
+            context.getLogger().info("Embeddings created for " + docs.size() + " chunks (" + chunks.size() + " original).");
+
+            // Phase 4: Index
             String searchEndpoint = System.getenv("AZURE_SEARCH_ENDPOINT");
             String searchKey = System.getenv("AZURE_SEARCH_API_KEY");
             if (searchEndpoint == null || searchKey == null) {
-                context.getLogger().warning("Search endpoint/key missing; skipping Azure Search upload.");
+                context.getLogger().warning("Search configuration missing; skipping upload.");
+                context.getLogger().info("=== AEM Sync Pipeline Complete (No Search Upload) ===");
                 return;
             }
-            com.azure.search.documents.SearchClient searchClient = new com.azure.search.documents.SearchClientBuilder()
+            SearchClient searchClient = new SearchClientBuilder()
                 .endpoint(searchEndpoint)
-                .credential(new com.azure.core.credential.AzureKeyCredential(searchKey))
+                .credential(new AzureKeyCredential(searchKey))
                 .indexName("aem-content-index")
                 .buildClient();
-            context.getLogger().info("Uploading documents to Azure Search...");
+            context.getLogger().info("Uploading " + docs.size() + " documents to Azure Search...");
             searchClient.uploadDocuments(docs);
-            context.getLogger().info("Uploaded " + docs.size() + " text chunks to Azure Search.");
+            context.getLogger().info("Upload complete.");
+            context.getLogger().info("=== AEM Sync Pipeline Complete Successfully ===");
         } catch (Exception e) {
-            context.getLogger().severe("Sync operation failed: " + e.getMessage());
+            context.getLogger().severe("Pipeline failed: " + e.getMessage());
+            throw new RuntimeException("AEM Sync Pipeline failed", e);
         }
     }
 
@@ -95,6 +103,7 @@ public class SyncAemContentService {
 
     // Use OpenAI to split and summarize text into chunks
     private static List<String> chunkTextWithOpenAI(String rawText, ExecutionContext context) {
+        context.getLogger().info("Attempting OpenAI-powered intelligent chunking...");
         String endpoint = System.getenv("AZURE_OPENAI_ENDPOINT");
         String apiKey = System.getenv("AZURE_OPENAI_API_KEY");
         if (apiKey == null || apiKey.isBlank()) {
@@ -104,9 +113,13 @@ public class SyncAemContentService {
         String apiVersion = Optional.ofNullable(System.getenv("AZURE_OPENAI_API_VERSION")).orElse("2024-02-15-preview");
 
         if (endpoint == null || apiKey == null || deployment == null) {
-            context.getLogger().warning("Missing OpenAI env vars for chunking. Falling back to naive paragraph split.");
-            return Arrays.asList(rawText.split("\n\n"));
+            context.getLogger().warning("Missing OpenAI config (endpoint/key/deployment). Falling back to naive paragraph split");
+            List<String> fallbackChunks = Arrays.asList(rawText.split("\n\n"));
+            context.getLogger().info("Fallback chunking created " + fallbackChunks.size() + " chunks");
+            return fallbackChunks;
         }
+        
+        context.getLogger().info("Using OpenAI Chat deployment: " + deployment);
 
         try {
             OkHttpClient http = new OkHttpClient();
@@ -133,6 +146,7 @@ public class SyncAemContentService {
 
             try (Response response = http.newCall(request).execute()) {
                 if (!response.isSuccessful()) {
+                    context.getLogger().warning("OpenAI chunking request failed: HTTP " + response.code() + " - " + response.message());
                     throw new RuntimeException("Chat completion failed: HTTP " + response.code() + " - " + response.message());
                 }
                 String responseBody = response.body().string();
@@ -152,13 +166,88 @@ public class SyncAemContentService {
                         chunks.add(trimmed);
                     }
                 }
-                context.getLogger().info("Chunked into " + chunks.size() + " segments via OpenAI.");
+                context.getLogger().info("OpenAI intelligent chunking successful: " + chunks.size() + " semantic chunks created");
                 return chunks;
             }
         } catch (Exception e) {
-            context.getLogger().severe("OpenAI chunking failed: " + e.getMessage() + ". Falling back to naive paragraph split.");
-            return Arrays.asList(rawText.split("\n\n"));
+            context.getLogger().warning("OpenAI chunking failed: " + e.getMessage() + ". Falling back to naive paragraph split");
+            List<String> fallbackChunks = Arrays.asList(rawText.split("\n\n"));
+            context.getLogger().info("Fallback chunking created " + fallbackChunks.size() + " chunks");
+            return fallbackChunks;
         }
+    }
+
+    // Retry wrapper for chunking
+    private static List<String> chunkTextWithOpenAIWithRetry(String rawText, ExecutionContext context) {
+        int maxRetries = intFromEnv("SYNC_MAX_OPENAI_RETRIES", 3);
+        long backoffMs = longFromEnv("SYNC_OPENAI_BACKOFF_MS", 750);
+        int attempt = 0;
+        while (true) {
+            try {
+                return chunkTextWithOpenAI(rawText, context);
+            } catch (Exception ex) {
+                attempt++;
+                if (attempt > maxRetries) {
+                    context.getLogger().severe("OpenAI chunking permanently failed after " + attempt + " attempts: " + ex.getMessage());
+                    return Arrays.asList(rawText.split("\n\n"));
+                } else {
+                    context.getLogger().warning("OpenAI chunking attempt " + attempt + " failed: " + ex.getMessage() + "; retrying in " + backoffMs + "ms");
+                    try { Thread.sleep(backoffMs); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); return Arrays.asList(rawText.split("\n\n")); }
+                }
+            }
+        }
+    }
+
+    private static String fetchAemWithRetry(String url, ExecutionContext context) throws Exception {
+        int maxRetries = intFromEnv("SYNC_MAX_AEM_RETRIES", 3);
+        long backoffMs = longFromEnv("SYNC_AEM_BACKOFF_MS", 500);
+        OkHttpClient client = new OkHttpClient();
+        String aemUser = System.getenv("AEM_USERNAME");
+        String aemPass = System.getenv("AEM_PASSWORD");
+        String aemToken = System.getenv("AEM_AUTH_TOKEN");
+        int attempt = 0;
+        while (true) {
+            attempt++;
+            Request.Builder builder = new Request.Builder().url(url);
+            if (aemToken != null && !aemToken.isBlank()) {
+                builder.addHeader("Authorization", "Bearer " + aemToken);
+            } else if (aemUser != null && !aemUser.isBlank() && aemPass != null) {
+                String basic = java.util.Base64.getEncoder().encodeToString((aemUser + ":" + aemPass).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                builder.addHeader("Authorization", "Basic " + basic);
+            }
+            Request request = builder.build();
+            try (Response response = client.newCall(request).execute()) {
+                context.getLogger().info("AEM response status: " + response.code());
+                if (!response.isSuccessful()) {
+                    if (response.code() >= 500 && attempt <= maxRetries) {
+                        context.getLogger().warning("AEM fetch server error (" + response.code() + ") attempt " + attempt + " - retrying in " + backoffMs + "ms");
+                        Thread.sleep(backoffMs);
+                        continue;
+                    }
+                    throw new RuntimeException("Failed to fetch AEM data (status " + response.code() + ")");
+                }
+                return response.body().string();
+            } catch (Exception ex) {
+                if (attempt > maxRetries) {
+                    throw ex;
+                }
+                context.getLogger().warning("AEM fetch attempt " + attempt + " failed: " + ex.getMessage() + " - retrying in " + backoffMs + "ms");
+                try { Thread.sleep(backoffMs); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); throw ex; }
+            }
+        }
+    }
+
+    private static int intFromEnv(String key, int defVal) {
+        try {
+            String v = System.getenv(key);
+            return (v == null || v.isBlank()) ? defVal : Integer.parseInt(v.trim());
+        } catch (Exception e) { return defVal; }
+    }
+    private static long longFromEnv(String key, long defVal) {
+        try {
+            String v = System.getenv(key);
+            return (v == null || v.isBlank()) ? defVal : Long.parseLong(v.trim());
+        } catch (Exception e) { return defVal; }
     }
 
     // For local testing: read sample JSON file
