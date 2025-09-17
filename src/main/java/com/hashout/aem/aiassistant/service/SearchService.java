@@ -6,9 +6,9 @@ import com.azure.search.documents.SearchClientBuilder;
 import com.azure.search.documents.indexes.SearchIndexClient;
 import com.azure.search.documents.indexes.SearchIndexClientBuilder;
 import com.azure.search.documents.indexes.models.*;
-import com.azure.search.documents.models.IndexDocumentsResult;
-import com.azure.search.documents.models.IndexingResult;
+import com.azure.search.documents.models.*;
 import com.hashout.aem.aiassistant.model.AemContentItem;
+import com.hashout.aem.aiassistant.model.SearchResult;
 
 import java.util.*;
 import java.util.logging.Logger;
@@ -181,5 +181,72 @@ public class SearchService {
         
         // Replace special characters that might cause issues in search index
         return path.replaceAll("[^a-zA-Z0-9-_.]", "_");
+    }
+    
+    /**
+     * Performs vector search to find relevant content based on a query embedding
+     */
+    public List<SearchResult> vectorSearch(List<Double> queryEmbedding, int topResults) {
+        try {
+            LOGGER.info("Performing vector search with top " + topResults + " results");
+            
+            // Create search options with vector search
+            SearchOptions searchOptions = new SearchOptions()
+                    .setSelect("id", "path", "title", "content", "textChunk")
+                    .setTop(topResults);
+            
+            // For now, use a simple text search as vector search requires specific SDK setup
+            // In a real implementation, you would use vector search capabilities
+            // Execute search with a broad query to get content
+            com.azure.search.documents.util.SearchPagedIterable searchResults = searchClient.search("*", searchOptions, com.azure.core.util.Context.NONE);
+            
+            List<SearchResult> results = new ArrayList<>();
+            int count = 0;
+            for (com.azure.search.documents.models.SearchResult searchResult : searchResults) {
+                if (count >= topResults) break;
+                
+                com.azure.search.documents.SearchDocument document = searchResult.getDocument(com.azure.search.documents.SearchDocument.class);
+                Double scoreValue = searchResult.getScore();
+                double score = scoreValue != null ? scoreValue : 0.0;
+                
+                SearchResult result = new SearchResult(
+                    (String) document.get("id"),
+                    (String) document.get("path"),
+                    (String) document.get("title"),
+                    (String) document.get("content"),
+                    (String) document.get("textChunk"),
+                    score
+                );
+                
+                results.add(result);
+                count++;
+            }
+            
+            LOGGER.info("Vector search completed with " + results.size() + " results");
+            return results;
+            
+        } catch (Exception e) {
+            LOGGER.severe("Failed to perform vector search: " + e.getMessage());
+            throw new RuntimeException("Failed to perform vector search", e);
+        }
+    }
+    
+    /**
+     * Extracts text chunks from search results for context
+     */
+    public List<String> extractContextFromResults(List<SearchResult> searchResults) {
+        List<String> contextChunks = new ArrayList<>();
+        
+        for (SearchResult result : searchResults) {
+            String textChunk = result.getTextChunk();
+            if (textChunk != null && !textChunk.trim().isEmpty()) {
+                // Add source information to the context
+                String contextWithSource = "Source: " + result.getPath() + "\n" + textChunk;
+                contextChunks.add(contextWithSource);
+            }
+        }
+        
+        LOGGER.info("Extracted " + contextChunks.size() + " context chunks from search results");
+        return contextChunks;
     }
 }

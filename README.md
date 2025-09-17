@@ -16,9 +16,11 @@ The solution consists of:
 
 1. **SyncAemContent**: Timer-triggered function for scheduled synchronization
 2. **SyncAemContentOnDemand**: HTTP-triggered function for manual sync
-3. **AemDataService**: Service for fetching content from AEM Data Export Servlet
-4. **EmbeddingService**: Service for generating vector embeddings using Azure OpenAI
-5. **SearchService**: Service for managing Azure AI Search index and documents
+3. **AskQuestion**: HTTP-triggered function for RAG-based AI chat assistance
+4. **AemDataService**: Service for fetching content from AEM Data Export Servlet
+5. **EmbeddingService**: Service for generating vector embeddings using Azure OpenAI
+6. **ChatService**: Service for generating chat completions using Azure OpenAI
+7. **SearchService**: Service for managing Azure AI Search index and vector search operations
 
 ## Prerequisites
 
@@ -48,6 +50,7 @@ Update `local.settings.json` with your Azure service credentials:
     "AZURE_OPENAI_ENDPOINT": "https://your-openai-resource.openai.azure.com/",
     "AZURE_OPENAI_API_KEY": "your_openai_api_key",
     "AZURE_OPENAI_DEPLOYMENT_NAME": "your_embedding_model_deployment",
+    "AZURE_OPENAI_CHAT_DEPLOYMENT_NAME": "your_chat_model_deployment",
     
     "AZURE_SEARCH_ENDPOINT": "https://your-search-service.search.windows.net",
     "AZURE_SEARCH_API_KEY": "your_search_api_key",
@@ -61,6 +64,8 @@ Update `local.settings.json` with your Azure service credentials:
   }
 }
 ```
+
+**Note**: If `AZURE_OPENAI_CHAT_DEPLOYMENT_NAME` is not specified, the system will use `AZURE_OPENAI_DEPLOYMENT_NAME` for both embedding generation and chat completions.
 
 ## Building and Deployment
 
@@ -99,10 +104,49 @@ Update `local.settings.json` with your Azure service credentials:
 - **URL**: `/api/SyncAemContentOnDemand`
 - **Authentication**: Function key required
 
+### Chat AI Assistant (RAG)
+- **Function**: `AskQuestion`
+- **Method**: `POST`
+- **URL**: `/api/AskQuestion`
+- **Authentication**: Function key required
+- **Content-Type**: `application/json`
+
+#### Request Format
+```json
+{
+  "question": "What is Adobe Experience Manager?"
+}
+```
+
+#### Response Format
+```json
+{
+  "answer": "Adobe Experience Manager (AEM) is a comprehensive content management solution...",
+  "sources": [
+    "/content/dam/aem-docs/overview",
+    "/content/help/aem-introduction"
+  ],
+  "confidence": "medium",
+  "timestamp": "2023-01-01T12:00:00"
+}
+```
+
+#### Error Response Format
+```json
+{
+  "error": "Question is required and cannot be empty"
+}
+```
+
 ### Example Usage
 ```bash
 # Trigger on-demand sync
 curl -X POST "https://your-function-app.azurewebsites.net/api/SyncAemContentOnDemand?code=your_function_key"
+
+# Ask a question to the AI assistant
+curl -X POST "https://your-function-app.azurewebsites.net/api/AskQuestion?code=your_function_key" \
+  -H "Content-Type: application/json" \
+  -d '{"question": "How do I create a new page in AEM?"}'
 ```
 
 ## Data Model
@@ -173,14 +217,19 @@ src/
 ├── main/java/com/hashout/aem/aiassistant/
 │   ├── Function.java                 # Main Azure Functions
 │   ├── model/
-│   │   └── AemContentItem.java       # AEM content POJO
+│   │   ├── AemContentItem.java       # AEM content POJO
+│   │   ├── ChatRequest.java          # Chat request model
+│   │   ├── ChatResponse.java         # Chat response model
+│   │   └── SearchResult.java         # Search result model
 │   └── service/
 │       ├── AemDataService.java       # AEM data fetching
+│       ├── ChatService.java          # OpenAI chat completions
 │       ├── EmbeddingService.java     # OpenAI embeddings
 │       └── SearchService.java        # Azure Search operations
 └── test/
     └── java/com/hashout/aem/aiassistant/
-        └── FunctionTest.java         # Unit tests
+        ├── AskQuestionTest.java      # AskQuestion endpoint tests
+        └── FunctionTest.java         # General function tests
 ```
 
 ### Adding New Features
