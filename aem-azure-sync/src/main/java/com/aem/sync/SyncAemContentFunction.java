@@ -6,14 +6,14 @@ import com.microsoft.azure.functions.annotation.*;
 import java.util.*;
 
 public class SyncAemContentFunction {
-    // @FunctionName("SyncAemContentTimer")
-    // public void runTimer(
-    //     @TimerTrigger(name = "syncAemTimer", schedule = "0 0 * * * *") String timerInfo,
-    //     final ExecutionContext context
-    // ) {
-    //     context.getLogger().info("Timer triggered SyncAemContent");
-    //     SyncAemContentService.sync(context);
-    // }
+    @FunctionName("SyncAemContentTimer")
+    public void runTimer(
+        @TimerTrigger(name = "syncAemTimer", schedule = "%SYNC_CRON_SCHEDULE%") String timerInfo,
+        final ExecutionContext context
+    ) {
+        context.getLogger().info("Timer triggered SyncAemContent; schedule expression: %SYNC_CRON_SCHEDULE% ; timerInfo=" + timerInfo);
+        SyncAemContentService.sync(context);
+    }
 
     @FunctionName("SyncAemContentHttp")
     public HttpResponseMessage runHttp(
