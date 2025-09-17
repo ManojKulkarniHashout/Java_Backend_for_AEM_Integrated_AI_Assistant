@@ -6,8 +6,8 @@ This Azure Function exposes a `/api/AskQuestion` endpoint that implements Retrie
 Set the following environment variables for deployment:
 - `AZURE_OPENAI_ENDPOINT`: Azure OpenAI endpoint URL
 - `AZURE_OPENAI_KEY`: Azure OpenAI API key
-- `AZURE_OPENAI_EMBEDDING_MODEL`: Embedding model name (e.g., "text-embedding-ada-002")
-- `AZURE_OPENAI_CHAT_MODEL`: Chat model name (e.g., "gpt-35-turbo")
+- `AZURE_OPENAI_EMBEDDING_DEPLOYMENT`: Embedding deployment name (e.g., "text-embedding-ada-002")
+- `AZURE_OPENAI_CHAT_DEPLOYMENT`: Chat deployment name (e.g., "gpt-35-turbo")
 - `AZURE_SEARCH_ENDPOINT`: Azure AI Search endpoint URL
 - `AZURE_SEARCH_KEY`: Azure AI Search API key
 - `AZURE_SEARCH_INDEX_NAME`: Name of the Azure Search index containing AEM data
