@@ -24,11 +24,13 @@ public class AemDataService {
     private final String aemDataExportUrl;
     private final String aemUsername;
     private final String aemPassword;
+    private final String aemAuthToken; // Optional bearer token
     
     public AemDataService(String aemDataExportUrl, String aemUsername, String aemPassword) {
         this.aemDataExportUrl = aemDataExportUrl;
         this.aemUsername = aemUsername;
         this.aemPassword = aemPassword;
+        this.aemAuthToken = System.getenv("AEM_AUTH_TOKEN");
         this.objectMapper = new ObjectMapper();
         
         // Configure HTTP client with timeouts
@@ -45,13 +47,19 @@ public class AemDataService {
     public List<AemContentItem> fetchAemContent() throws IOException {
         LOGGER.info("Fetching AEM content from: " + aemDataExportUrl);
         
-        // Build request with Basic Auth
-        Request request = new Request.Builder()
+        // Build request with appropriate auth (Bearer if token provided, else Basic if username/password provided)
+        Request.Builder builder = new Request.Builder()
                 .url(aemDataExportUrl)
-                .header("Authorization", buildBasicAuthHeader())
-                .header("Accept", "application/json")
-                .get()
-                .build();
+                .header("Accept", "application/json");
+
+        String authHeader = buildAuthHeader();
+        if (authHeader != null) {
+            builder.header("Authorization", authHeader);
+        } else {
+            LOGGER.warning("No AEM authentication configured (AEM_AUTH_TOKEN or AEM_USERNAME/AEM_PASSWORD). Proceeding without auth header.");
+        }
+
+        Request request = builder.get().build();
         
         try (Response response = httpClient.newCall(request).execute()) {
             if (!response.isSuccessful()) {
@@ -74,10 +82,23 @@ public class AemDataService {
      * Builds Basic Authentication header
      */
     private String buildBasicAuthHeader() {
+        if (aemUsername == null || aemPassword == null) {
+            return null;
+        }
         String credentials = aemUsername + ":" + aemPassword;
-        String encodedCredentials = Base64.getEncoder()
-                .encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
+        String encodedCredentials = Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
         return "Basic " + encodedCredentials;
+    }
+
+    /**
+     * Builds the correct auth header based on available configuration.
+     * Priority: Bearer token (AEM_AUTH_TOKEN) > Basic (AEM_USERNAME/AEM_PASSWORD) > none
+     */
+    private String buildAuthHeader() {
+        if (aemAuthToken != null && !aemAuthToken.isBlank()) {
+            return "Bearer " + aemAuthToken.trim();
+        }
+        return buildBasicAuthHeader();
     }
     
     /**

@@ -28,23 +28,21 @@ public class Function {
      * Timer-triggered function that syncs AEM content to Azure AI Search
      * Runs on schedule (default: every hour) as defined in local.settings.json
      */
-    @FunctionName("SyncAemContent")
-    public void syncAemContent(
-            @TimerTrigger(name = "timerInfo", schedule = "%SYNC_SCHEDULE%") String timerInfo,
-            final ExecutionContext context) {
-        
-        Logger logger = context.getLogger();
-        logger.info("SyncAemContent timer trigger function executed at: " + LocalDateTime.now());
-        logger.info("Timer Info: " + timerInfo);
-        
-        try {
-            performSync(logger);
-            logger.info("AEM content sync completed successfully");
-        } catch (Exception e) {
-            logger.severe("Failed to sync AEM content: " + e.getMessage());
-            throw new RuntimeException("Sync failed", e);
-        }
-    }
+//    @FunctionName("SyncAemContent")
+//    public void syncAemContent(
+//            @TimerTrigger(name = "timerInfo", schedule = "%SYNC_SCHEDULE%") String timerInfo,
+//            final ExecutionContext context) {
+//        Logger logger = context.getLogger();
+//        logger.info("SyncAemContent timer trigger function executed at: " + LocalDateTime.now());
+//        logger.info("Timer Info: " + timerInfo);
+//        try {
+//            performSync(logger);
+//            logger.info("AEM content sync completed successfully");
+//        } catch (Exception e) {
+//            logger.severe("Failed to sync AEM content: " + e.getMessage());
+//            throw new RuntimeException("Sync failed", e);
+//        }
+//    }
     
     /**
      * HTTP-triggered function for on-demand AEM content sync
