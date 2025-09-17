@@ -119,7 +119,7 @@ public class SyncAemContentService {
             if (e.getCause() != null) {
                 context.getLogger().severe("Caused by: " + e.getCause().getMessage());
             }
-            throw new RuntimeException("Sync operation failed", e);
+            throw new RuntimeException("AEM Sync Pipeline failed: " + e.getMessage(), e);
         }
     }
 
