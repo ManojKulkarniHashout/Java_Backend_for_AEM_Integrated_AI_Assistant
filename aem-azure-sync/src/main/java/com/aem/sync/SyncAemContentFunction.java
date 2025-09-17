@@ -8,16 +8,16 @@ import java.util.*;
 public class SyncAemContentFunction {
     @FunctionName("SyncAemContentTimer")
     public void runTimer(
-        @TimerTrigger(name = "syncAemTimer", schedule = "0 0 * * * *") String timerInfo,
+        @TimerTrigger(name = "syncAemTimer", schedule = "%SYNC_CRON_SCHEDULE%") String timerInfo,
         final ExecutionContext context
     ) {
-        context.getLogger().info("Timer triggered SyncAemContent");
+        context.getLogger().info("Timer triggered SyncAemContent; schedule expression: %SYNC_CRON_SCHEDULE% ; timerInfo=" + timerInfo);
         SyncAemContentService.sync(context);
     }
 
     @FunctionName("SyncAemContentHttp")
     public HttpResponseMessage runHttp(
-        @HttpTrigger(name = "req", methods = {HttpMethod.POST}, authLevel = AuthorizationLevel.FUNCTION)
+        @HttpTrigger(name = "req", methods = {HttpMethod.POST}, authLevel = AuthorizationLevel.ANONYMOUS)
         HttpRequestMessage<Optional<String>> request,
         final ExecutionContext context
     ) {

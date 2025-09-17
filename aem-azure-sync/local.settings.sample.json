@@ -1,0 +1,17 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "java",
+  "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+  "SYNC_CRON_SCHEDULE": "0 0 * * * *",
+    "AEM_EXPORT_SERVLET_URL": "http://localhost:4502/bin/aem-export.json",
+    "AEM_USERNAME": "admin",
+    "AEM_PASSWORD": "admin",
+    "AZURE_OPENAI_ENDPOINT": "https://your-openai-resource.openai.azure.com/",
+    "AZURE_OPENAI_API_KEY": "REPLACE_ME",
+    "AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "text-embedding-ada-002",
+    "AZURE_OPENAI_CHAT_DEPLOYMENT": "gpt-4o-mini",
+    "AZURE_SEARCH_ENDPOINT": "https://your-search.search.windows.net",
+    "AZURE_SEARCH_API_KEY": "REPLACE_ME"
+  }
+}
