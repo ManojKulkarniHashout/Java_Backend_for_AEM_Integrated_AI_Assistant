@@ -48,8 +48,45 @@ public class RagService {
         }
 
         // Step 2: Query Azure AI Search with the embedding (SDK logic removed, add REST if needed)
-        String context = "AEM content context here."; // TODO: Replace with actual search results if needed
-
+        // Query Azure Cognitive Search REST API using the embedding
+        // NOTE: You may need to configure these values appropriately
+        String searchEndpoint = System.getenv("AZURE_SEARCH_ENDPOINT");
+        String searchKey = System.getenv("AZURE_SEARCH_KEY");
+        String searchIndex = System.getenv("AZURE_SEARCH_INDEX");
+        if (searchEndpoint == null || searchKey == null || searchIndex == null) {
+            throw new IllegalArgumentException("Missing Azure Search configuration (endpoint, key, or index)");
+        }
+        String searchUrl = String.format("%s/indexes/%s/docs/search?api-version=2023-11-01", searchEndpoint, searchIndex);
+        // Construct the search payload using vector search
+        Map<String, Object> searchPayloadMap = new HashMap<>();
+        searchPayloadMap.put("vector", Map.of(
+            "value", embedding,
+            "fields", List.of("embedding"),
+            "k", 3 // number of top results
+        ));
+        searchPayloadMap.put("top", 3);
+        String searchPayload = objectMapper.writeValueAsString(searchPayloadMap);
+        HttpRequest searchRequest = HttpRequest.newBuilder()
+            .uri(URI.create(searchUrl))
+            .header("Content-Type", "application/json")
+            .header("api-key", searchKey)
+            .POST(HttpRequest.BodyPublishers.ofString(searchPayload))
+            .build();
+        HttpResponse<String> searchResponse = httpClient.send(searchRequest, HttpResponse.BodyHandlers.ofString());
+        JsonNode searchJson = objectMapper.readTree(searchResponse.body());
+        // Extract context from search results
+        StringBuilder contextBuilder = new StringBuilder();
+        if (searchJson.has("value")) {
+            for (JsonNode doc : searchJson.get("value")) {
+                if (doc.has("content")) {
+                    contextBuilder.append(doc.get("content").asText()).append("\n");
+                }
+            }
+        }
+        String context = contextBuilder.toString().trim();
+        if (context.isEmpty()) {
+            context = "No relevant context found.";
+        }
         // Step 3: Send context and question to OpenAI chat model using REST API
         String chatUrl = String.format("%s/openai/deployments/%s/chat/completions?api-version=2023-05-15", openAIEndpoint, chatDeployment);
         List<Map<String, String>> messages = Arrays.asList(
